@@ -1,0 +1,435 @@
+---
+title: "Data Analysis project"
+author: "Lam Nguyen"
+date: "4/29/2021"
+output:
+  html_document:
+    theme: united
+    css: style.css
+  pdf_document: default
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include = FALSE}
+# Load packages here
+library(rvest)
+library(dplyr)
+library(tidyverse)
+library(shiny)
+library(ggthemes)
+library(highcharter)
+library(maps)
+library(reshape2)
+```
+<head>
+<link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css">
+</head>
+<body>
+<nav>
+<button class="toggle"><i class="fa fa-reorder"></i></button>
+<div id="navbar" class="navigate">
+<ul>
+<li><a class="link" id="click" href="#section-data-prep">Data Preparing</a></li>
+<li><a class="link" id="click" href="#section-plots">Related Plots</a></li>
+<li><a class="link" id="click" href="#section-players">Players Selection</a></li>
+<li><a class="link" id="click" href="#section-conclusion">Conclusion</a></li>
+</ul>
+</div>
+</nav>
+<br />
+<div class="title">
+<img class="logo" src="au-open-logo.png"  width="150" height="150"/>
+<h1><b>Data analysis project - Australian Open 2021</b></h1>
+<img src="trophys_v2_e_f.jpg" width="200" height="150"/>
+</div>
+<div id="abstract">
+## Abstract
+<h5>Being an avid fan of tennis, I’ve always wanted to see how tennis players from different countries compete against each other and gather their statistics. Specifically, I am interested in presenting data of players' performance - for both men and women at the recent Grand Slam tournament: Australian Open which was held in Melbourne, Australia.</h5>
+<h5>The tournament was first held in 1905 as the Australasian Championships. It has since grown to be one of the most popular sporting events in the Southern Hemisphere. However, the tournament suffered from the reluctance of overseas players to travel the long distance to compete, before improvements in aviation travels happened (Encyclopædia Britannica, n.d.). With 812,000 spectators expected to attend the 2021 Australian Open, it is the most successful Grand Slam tournament. The Open is also known as the "happy slam" and the Asia Pacific Grand Slam. (Business Standard, n.d.).</h5>
+<h5>The tournament is divided into Singles and Doubles play, with ten categories: Men’s, Women’s, Junior Boys, Junior Girls, Mixed, Men’s wheelchair, Women’s wheelchair, Quad's wheelchair, Men’s legend and Women’s legend. There are 128 players in Men’s and Women’s categories and 64 players in the remaining categories.</h5>
+<h5>The dataset will be extracted from the official API of the tournament, refering to the Event-stats section in the official website. I will select the Aces, Double Faults, and Break Points won percentage for each player because they show how well a player is able to hold their service game as well as breaking opponents’ service games - indicators of how well they perform and be able to win the match.</h5> 
+</div>
+
+<div id="data-prep">
+## Data Preparing
+<h5>To prepare the datasets, I will gather data about the Aces, Double Faults, and Break Points won percentage for each player in the tournament (Australian Open 2021). Data gathered for both men and women.</h5>
+
+**Aces data:**
+
+```{r echo=FALSE, fig.align='center'}
+data_url <- 'stats.json' #data comes from 'https://prod-scores-api.ausopen.com/year/2021/stats'
+dat <- jsonlite::fromJSON(data_url)
+#men
+men_aces <- bind_rows(dat$statistics$rankings[[1]]$players[1]) 
+men_aces_table <- dat$players %>%
+     inner_join(men_aces, by = c('uuid' = 'player_id')) %>% #innerjoin to grab player's name since the table only has player's id
+     select(full_name, nationality, matches, gender, value) %>%
+     mutate(nationality = pmap_chr(nationality, ~ ..2)) %>% #since nationality is a nested object, use the library to extract the nation's name'
+     rename(aces = value) %>%
+     arrange(-aces)
+#women
+women_aces <- bind_rows(dat$statistics$rankings[[1]]$players[2])
+women_aces_table <- dat$players %>%
+     inner_join(women_aces, by = c('uuid' = 'player_id')) %>%
+     select(full_name, nationality, matches, gender, value) %>%
+     mutate(nationality = pmap_chr(nationality, ~ ..2)) %>%
+     rename(aces = value) %>%
+     arrange(-aces)
+aces_table <- merge(x = men_aces_table, y = women_aces_table, all = TRUE) %>% arrange(-aces)
+aces_table
+```
+
+**Double Faults**
+
+``` {r echo = FALSE, fig.align='center'}
+men_fastest <- bind_rows(dat$statistics$rankings[[2]]$players[1])
+men_speed_table <- dat$players %>%
+  inner_join(men_fastest, by = c("uuid" = "player_id")) %>%
+  arrange(-value) %>%
+  rename(serve_speed = value) %>%
+  select(full_name, gender, serve_speed)
+women_fastest <- bind_rows(dat$statistics$rankings[[2]]$players[2])
+  women_speed_table <- dat$players %>%
+  inner_join(women_fastest, by = c("uuid" = "player_id")) %>%
+  arrange(-value) %>%
+  rename(serve_speed = value) %>%
+  select(full_name, gender, serve_speed)
+speed_table <- merge(x = men_speed_table, y = women_speed_table, all = TRUE)
+speed_table <- speed_table %>% arrange(-serve_speed) %>% as_tibble()
+men_double <- bind_rows(dat$statistics$rankings[[3]]$players[1])
+#men
+men_df_table <- dat$players %>%
+     inner_join(men_double, by = c('uuid' = 'player_id')) %>%
+     arrange(rank) %>%
+     rename(double_faults = value) %>%
+     select(full_name, nationality, matches, gender, double_faults) %>%
+     mutate(nationality = pmap_chr(nationality, ~ ..2))
+#women
+women_double <- bind_rows(dat$statistics$rankings[[3]]$players[2])
+women_df_table <- dat$players %>%
+     inner_join(women_double, by = c('uuid' = 'player_id')) %>%
+     arrange(rank) %>%
+     rename(double_faults = value) %>%
+     select(full_name, nationality, matches, gender, double_faults) %>%
+     mutate(nationality = pmap_chr(nationality, ~ ..2))
+df_table <- merge(x = men_df_table, y = women_df_table, all = TRUE) %>% arrange(-double_faults)
+df_table
+```
+
+**Break Points Won Percentage**
+``` {r echo = FALSE, fig.align='center'}
+men_double <- bind_rows(dat$statistics$rankings[[9]]$players[1])
+men_bp_table <- dat$players %>%
+     inner_join(men_double, by = c('uuid' = 'player_id')) %>%
+     arrange(rank) %>%
+     rename(bp_won_pctg = value) %>% 
+     select(full_name, nationality, matches, gender, bp_won_pctg) %>%
+     mutate(nationality = pmap_chr(nationality, ~ ..2))
+women_double <- bind_rows(dat$statistics$rankings[[9]]$players[2])
+women_bp_table <- dat$players %>%
+     inner_join(women_double, by = c('uuid' = 'player_id')) %>%
+     arrange(rank) %>%
+     rename(bp_won_pctg = value) %>% 
+     select(full_name, nationality, matches, gender, bp_won_pctg) %>%
+     mutate(nationality = pmap_chr(nationality, ~ ..2))
+bp_table <- merge(x = men_bp_table, y = women_bp_table, all = TRUE) %>% arrange(-bp_won_pctg)
+bp_table
+```
+</div>
+
+<div id="plots">
+## Related Plots
+
+<h5>For the value of each value interested (the statistics) - which is a single quantitative variable, it would be plausible to display them via boxplots. Here, to assess a player's ability to hold their service game, I will display the data for number of aces and double faults for both genders.</h5>
+
+**Aces**
+
+```{r echo=FALSE, fig.align='center'}
+ggplot(data = aces_table, aes(x = factor(gender), y = aces)) + 
+  geom_boxplot(fill = "blue") + 
+  ggtitle("Distribution of number of Aces for men and women") +
+  ylab("Aces") + 
+  xlab("Gender") 
+```
+<h5>For the aces, it can be seen that men generally perform better than women, with a difference of 37.5 aces on average, and with maximum aces being 103 and 50 respectively. This can be explained by men matches in a Grand Slam are played best-of-five-set (the player must win 3 out of maximum 5 sets played to be victorious), while women only have to play best-of-three-set matches, therefore they are generally longer, allowing men to serve more aces.</h5>
+
+**Double Faults**
+```{r echo=FALSE, fig.align='center'}
+ggplot(data = df_table, aes(x = factor(gender), y = double_faults)) + 
+  geom_boxplot(fill = "blue") + 
+  ggtitle("Distribution of number of Double Faults for men and women") +
+  ylab("Double Faults") + 
+  xlab("Gender") 
+```
+<h5>For the double faults, it can be seen that men makes roughly the same number of double faults with women, a slight 3 double faults on average make a difference between them, and with a few outliers on the women side. This can be explained by the same reason above for number of aces.</h5>
+
+<h5>To see how well a player can break their opponent's service game, we look at the break point won percentage for both genders.</h5>
+
+```{r echo=FALSE, fig.align='center'}
+ggplot(data = bp_table, aes(x = factor(gender), y = bp_won_pctg)) + 
+  geom_boxplot(fill = "blue") + 
+  ggtitle("Distribution of break point won percentages for men and women") +
+  ylab("Break point won (percent)") + 
+  xlab("Gender") 
+```
+
+<h5>From the distribution, men and women have roughly equal break point conversion percentage, with three outliers in the men's competition, which belong to Novak Djokovic, Daniil Medvedev and Aslan Karatsev.</h5>
+
+
+<h5>Continuing with analyzing how well players are able to hold their service game, we are interested in whether the number of matches played relate to number of aces, since it would make sense for a player to serve more aces the more matches they play. We consider male players first in this analysis.</h5>
+
+```{r echo=FALSE, fig.align='center', warning= FALSE}
+ggplot(data = men_aces_table, aes(x = matches, y = aces )) + 
+  geom_point(aes(color = factor(full_name)) ) + 
+  ggtitle("Matches played vs Aces for Male players") +
+  xlab("Matches played") + 
+  ylab("Aces") + 
+  scale_color_discrete(name="Players") + 
+  geom_smooth(method = "lm")
+```
+
+<h5>We can generally see a upward trend in number of aces versus matches played for male players, however, there are a few players who play fewer matches but still serve more aces than the ones who play a full 7 matches.
+
+We do the same thing for female players.</h5>
+```{r echo=FALSE, fig.align='center', warning= FALSE}
+ggplot(data = women_aces_table, aes(x = matches, y = aces )) + 
+  geom_point(aes(color = factor(full_name)) ) + 
+  ggtitle("Matches played vs Aces for Female players") +
+  xlab("Matches played") + 
+  ylab("Aces") + 
+  scale_color_discrete(name="Players") + 
+  geom_smooth(method = "lm")
+```
+
+<h5>Again, we see a upward trend, but stronger in number of aces versus matches played for female players. Similar to male, there's a player that stood out (Naomi Osaka).</h5>
+
+<h5>To analyze how players break their opponents service games, we look into a summary table for both male and female players for their break point won percentage.</h5>
+
+```{r echo=FALSE, fig.align='center', warning= FALSE}
+men_bp_summary <- men_bp_table %>% 
+  group_by(matches) %>% 
+  summarize(Min = min(bp_won_pctg),
+             Q1 = quantile(bp_won_pctg, .25),
+             Avg = mean(bp_won_pctg), 
+             Q3 = quantile(bp_won_pctg, .75),
+             Max = max(bp_won_pctg)
+  )
+men_bp_summary
+```
+
+<h5>From the table, we can see that male average break points won percentage is roughly equal for players that play less than 6 matches, and those who played in the semifinals and the final have the higher break point conversion (28 and 37 respectively).</h5>
+
+```{r echo=FALSE, fig.align='center', warning= FALSE}
+women_bp_summary <- women_bp_table %>% 
+  group_by(matches) %>% 
+  summarize(Min = min(bp_won_pctg),
+             Q1 = quantile(bp_won_pctg, .25),
+             Avg = mean(bp_won_pctg), 
+             Q3 = quantile(bp_won_pctg, .75),
+             Max = max(bp_won_pctg)
+  )
+women_bp_summary
+```
+
+<h5>From the table, we can see that the average break point conversion percentage increases gradually with the number of matches played, which is the opposite of male players.</h5>
+</div>
+
+<div id="players">
+## Player selection
+<h5>I made a little Shiny App so that we can view a player's stats from their name (Aces, Double faults and Break point conversion percentage).</h5>
+
+<h5>First, I do a inner join with the data from the three tables above. Unfortunately, a player is not guaranteed to be present in all three tables as each table only has data of the top 20 players in a category (he/she might not have a lot of aces but might has the most double faults) so only players that are present in all three tables are displayed.</h5>
+
+```{r echo=FALSE}
+ao_summary <- merge(aces_table, merge(df_table, bp_table))
+```
+
+<center>This is a little map that highlights the countries where the players come from.</center>
+
+```{r echo=FALSE, fig.align='center'}
+world_data <- map_data("world")
+world_data$region[world_data$region == "USA"] <- "United States of America"
+countries <- unique(c(world_data$region))
+countries_player <- c(ao_summary$nationality)
+my_countries <- tibble(
+    countries, 
+    exist = countries %in% countries_player
+)
+countries_freq <- ao_summary %>% count(nationality) #frequency of the countries
+my_countries <- my_countries %>% left_join(countries_freq, by=c('countries' = 'nationality'))
+my_countries$n[is.na(my_countries$n)] <- 0
+my_countries <- my_countries %>% mutate(region = countries) # adds a region variable
+world_data_2 <- world_data %>% left_join(my_countries, by = "region") #joins my_countries to world by region
+world_data_2 %>% 
+    ggplot( aes(x = long, y = lat, group = group, fill = n) ) + 
+    geom_polygon(color = "darkgrey", size = 0.1) +
+    theme_map() +
+    labs(title = "Countries where players come from",
+         subtitle = "Last updated on April 24, 2021", 
+         fill = "Players") +
+    scale_fill_gradient(low = "gray", high = "blue")
+```
+
+
+```{r echo=FALSE}
+shinyApp(
+
+  ui = fluidPage(
+  
+  # Application title
+  titlePanel("View player's statistics"),
+  
+  # Sidebar with a slider input for number of bins 
+  sidebarLayout(
+    sidebarPanel(
+      uiOutput("getPlayer"),
+      sliderInput(
+        inputId = "serve_speed",  #  variable name that is used in server.R input$var_name
+        label = "Speed selector",  # Title tha appears above the slider
+        min = 180, max = 240, # min and max on the slider
+        value = 190 # initial variable value
+      ),
+      tableOutput("serve_table"),
+      tableOutput("serve_stats")
+    ),
+    
+    # Show a plot of the generated distribution
+    mainPanel(
+      tableOutput("stat_table"),
+      plotOutput("mapPlot"),
+      plotOutput("statPlot")
+    )
+  )
+),
+
+  server = function(input, output) {
+    
+  the_data <- reactive({
+    ao_summary
+  })
+  players_name <- reactive({
+    ao_summary %>% as_tibble %>% pull(full_name)
+  })
+
+  speed_data <- reactive({
+    speed_table
+  })
+  
+  #modify the data based on the selected player
+  the_data_2 <- reactive({
+    ao_summary$highlight <- vector(,nrow(ao_summary))
+    row_idx <- which(ao_summary$full_name == input$PlayerName)
+    ao_summary$highlight[row_idx] = TRUE
+    ao_summary <- melt(ao_summary)
+  })
+  
+  world_data_shiny <- reactive({
+    row_idx <- which(ao_summary$full_name == input$PlayerName)
+    country <- ao_summary$nationality[row_idx]
+    my_countries <- tibble(
+        countries,
+        exist = countries %in% c(country)
+    )
+    my_countries <- my_countries %>% mutate(region = countries)
+    world_data_2 <- world_data %>% left_join(my_countries, by = "region")
+  })
+  
+  ## Create and display a table to display the players' serve speed
+  output$serve_table <- renderTable(
+    speed_data() %>% mutate(gender = factor(gender)) %>%
+      filter(serve_speed >= input$serve_speed) %>%
+      count(gender, .drop = FALSE) %>%
+      pivot_wider(names_from = gender, values_from = n) %>% rename(Female = F, Male = M)
+  )
+  
+  output$serve_stats <- renderTable(
+     speed_data() %>% 
+       mutate(gender = factor(gender)) %>%
+       filter(serve_speed >= input$serve_speed) %>%
+       mutate(serve_speed = str_c(serve_speed, " km/h"))
+  )
+  
+  ## Create and display a table to display the player's statistic.  
+  output$stat_table <- renderTable(
+    the_data() %>% 
+      filter(full_name == !!input$PlayerName)
+  )
+  
+  ## Creates a plot to highlight where the player comes from
+  output$mapPlot <- renderPlot({
+    world_data_shiny() %>% 
+      ggplot( aes(x = long, y = lat, group = group, fill = exist) ) + 
+      geom_polygon(color = "darkgrey", size = 0.1) +
+      scale_fill_manual(values = c("gray", "blue")) +
+      theme_map() +
+      labs(
+        subtitle = "Last updated on April 24, 2021", 
+        fill = "Exist"
+      )
+  })
+  
+   ## Creates a a plot of statistics for the selected player
+  output$statPlot <- renderPlot({
+    ggplot(the_data_2(), aes(x=variable, y=value)) + 
+      geom_boxplot() +
+      geom_point(# add the highlight points
+          data=subset(the_data_2(), highlight), 
+          aes(x=variable, y=value), 
+          color="red", size=5
+      )
+  })
+  
+  ## Creates the variable input displayed in the UI
+  output$getPlayer <- renderUI ({
+    selectInput(
+      inputId = "PlayerName", 
+      label = "Select Player", 
+      choices = players_name(), 
+      selected = "Novak Djokovic"
+    )
+  })
+  
+},
+
+  options = list(height = 1200)
+)
+```  
+</div>
+
+<div id="conclusion">
+## Conclusion
+<h5>Based on the data analyzed above, we can conclude that when it comes to holding a service game, male players did a better job than female players in the tournament with higher average aces and roughly equal average double faults. However, both genders have the same break points conversion rate so we can affirm that they are equally good at breaking their opponent's service games.</h5>
+</div>
+<div id="references">
+## References
+Business Standard. “Australian Open (Tennis Tounament) - History, Prize Money.” Business Standard. Accessed March 5, 2021. https://www.business-standard.com/about/what-is-australian-open. 
+
+“Event Stats.” Event stats | Australian Open. Accessed March 5, 2021. https://ausopen.com/event-stats. 
+
+“Australian Open.” Encyclopædia Britannica. Encyclopædia Britannica, inc. Accessed April 23, 2021. https://www.britannica.com/sports/Australian-Open.
+</div>
+<footer class="fter">
+<div class="container">
+<p class="m-0 text-center text-white">Lam Nguyen - April 2021 (lnguye16@gustavus.edu)</p>
+</div>
+</footer>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script>
+
+            $("li").click(function (){
+                var anchor = $(this).children().attr('href');
+                $('html, body').animate({
+                    scrollTop: $(anchor).offset().top
+                }, 1200);
+            });
+            $(".toggle").on("click", function() {
+              $("#section-navbar").toggleClass("navigate");
+              $("#section-navbar").toggleClass('active');
+            });
+       
+</script>
+</body>
